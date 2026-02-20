@@ -1,5 +1,4 @@
 import json
-import os
 import re
 from datetime import datetime, timezone, timedelta
 
@@ -37,10 +36,6 @@ def _looks_like_api_key(s: str) -> bool:
     if not any(ch.isalnum() for ch in s):
         return False
     return True
-
-
-def _get_env_api_key() -> str:
-    return (os.getenv("OPENAI_API_KEY") or "").strip()
 
 
 def init_state() -> None:
@@ -81,14 +76,9 @@ def save_current_session() -> None:
 
 
 def build_client() -> OpenAI | None:
-    env_key = _get_env_api_key()
-    if _looks_like_api_key(env_key):
-        return OpenAI(api_key=env_key)
-
     ui_key = st.session_state.api_key.strip()
     if _looks_like_api_key(ui_key):
         return OpenAI(api_key=ui_key)
-
     return None
 
 
@@ -154,7 +144,9 @@ def import_log_json(uploaded_file, merge_default: bool = True, target_session: s
             if not isinstance(sname, str) or not isinstance(ctx, str):
                 continue
             if merge_default and st.session_state.session_contexts.get(sname, "").strip():
-                st.session_state.session_contexts[sname] = st.session_state.session_contexts[sname].rstrip() + "\n\n" + ctx.strip()
+                st.session_state.session_contexts[sname] = (
+                    st.session_state.session_contexts[sname].rstrip() + "\n\n" + ctx.strip()
+                )
             else:
                 st.session_state.session_contexts[sname] = ctx
 
@@ -167,7 +159,6 @@ def import_log_json(uploaded_file, merge_default: bool = True, target_session: s
     st.session_state.chat_messages = st.session_state.chat_sessions[target_session]
     st.session_state.session_context_editor = st.session_state.session_contexts.get(target_session, "")
 
-    # 念のため system をログから除去
     st.session_state.chat_messages = [m for m in st.session_state.chat_messages if m.get("role") != "system"]
     save_current_session()
 
@@ -301,34 +292,21 @@ def render_setup() -> None:
     st.title(APP_TITLE)
 
     st.subheader("安全性とプライバシー")
-    st.write("このアプリは APIキーをログファイルに保存しません。")
-    st.write("入力したAPIキーは画面に表示しません。")
-    st.write("開発者の深澤にも、OpenAI社にも、APIキーや会話内容がそのまま共有されることはありません。")
+    st.write("このアプリは OpenAI API を呼び出すだけのフロントエンドです。")
+    st.write("APIキーはログファイルやダウンロードJSONに保存しません。")
+    st.write("APIキーは画面に表示しません。")
+    st.write("APIキーはこのブラウザセッション内でのみ保持されます。")
+    st.write("開発者の深澤は、ユーザーのAPIキーや入力内容を回収しません。")
     st.write("このアプリは OpenAI API に対して、入力された文章と前提知識と会話履歴を送信します。")
 
     st.subheader("APIキー")
-    env_key = _get_env_api_key()
-    env_ok = _looks_like_api_key(env_key)
-
-    if env_ok:
-        st.success("環境変数 OPENAI_API_KEY を検出しました。自動で利用します。")
-        st.caption("環境変数を使う場合は、下の入力欄は不要です。")
-        st.text_input(
-            "OpenAI APIキー 手動入力",
-            type="password",
-            key="api_key",
-            placeholder="未入力でOK",
-            help="環境変数が無い場合にのみ必要です。入力内容はセッション内だけで保持されます。",
-        )
-    else:
-        st.warning("環境変数 OPENAI_API_KEY が見つからないか、形式が不正です。手動入力してください。")
-        st.text_input(
-            "OpenAI APIキー 手動入力",
-            type="password",
-            key="api_key",
-            placeholder="sk-...",
-            help="入力内容はセッション内だけで保持されます。ログやダウンロードファイルには含めません。",
-        )
+    st.text_input(
+        "OpenAI APIキー",
+        type="password",
+        key="api_key",
+        placeholder="sk-...",
+        help="必ずユーザー自身のAPIキーを入力してください。入力内容はセッション内だけで保持されます。",
+    )
 
     st.subheader("モデル選択の目安")
     st.write("高性能モデルは精度が高い傾向があります。")
@@ -370,8 +348,6 @@ def run_chat_mode(client: OpenAI) -> None:
     save_current_session()
 
     for msg in st.session_state.chat_messages:
-        if msg.get("role") == "system":
-            continue
         with st.chat_message(msg.get("role", "assistant")):
             st.write(msg.get("content", ""))
 
@@ -451,7 +427,7 @@ def main() -> None:
 
     client = build_client()
     if client is None:
-        st.info("APIキーが必要です。環境変数 OPENAI_API_KEY を設定するか、手動入力してください。")
+        st.info("APIキーを入力してください。")
         return
 
     st.divider()
